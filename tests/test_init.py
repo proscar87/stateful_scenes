@@ -66,6 +66,7 @@ async def test_async_setup_entry_hub_skips_already_registered_scene_ids(
         assert await hass.config_entries.async_setup(entry1.entry_id)
         await hass.async_block_till_done()
 
+    assert entry1.state is ConfigEntryState.LOADED
     assert entry2.state is ConfigEntryState.LOADED
 
     duplicate_id_errors = [
@@ -80,10 +81,14 @@ async def test_async_setup_entry_hub_skips_already_registered_scene_ids(
         f"{[r.message for r in duplicate_id_errors]}"
     )
 
-    # The second hub's scenes were already claimed by the first hub, so it
-    # should not attempt to re-register any of them.
-    hub2 = hass.data[DOMAIN][entry2.entry_id]
-    assert hub2.scenes == []
+    # Home Assistant sets both entries up concurrently, so either one may
+    # claim the scenes first. Exactly one hub must own them and the other
+    # must not attempt to re-register any of them.
+    hub_scene_ids = sorted(
+        [scene.id for scene in hass.data[DOMAIN][entry.entry_id].scenes]
+        for entry in (entry1, entry2)
+    )
+    assert hub_scene_ids == [[], ["1001", "1002"]]
 
 
 async def test_async_setup_entry_external_scene(
