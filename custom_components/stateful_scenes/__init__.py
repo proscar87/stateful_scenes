@@ -72,6 +72,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             number_tolerance=entry.data[CONF_NUMBER_TOLERANCE],
         )
 
+        # Scenes still in the file are not orphans, even when another entry
+        # claimed them first below: which entry wins can change between
+        # restarts, and this one may still own their registry rows.
+        valid_scene_ids = {scene.id for scene in hub.scenes}
+
         # Skip scenes whose id is already claimed by another loaded config
         # entry (e.g. a second Hub pointing at an overlapping scenes file)
         # to avoid registering entities with duplicate unique_ids (#209).
@@ -95,7 +100,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.data[DOMAIN][entry.entry_id] = hub
 
         # Clean up orphaned entities for removed scenes
-        valid_scene_ids = {scene.id for scene in hub.scenes}
         await async_cleanup_orphaned_entities(
             hass, DOMAIN, entry.entry_id, valid_scene_ids
         )

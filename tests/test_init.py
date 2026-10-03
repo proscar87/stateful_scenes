@@ -91,6 +91,43 @@ async def test_async_setup_entry_hub_skips_already_registered_scene_ids(
     assert hub_scene_ids == [[], ["1001", "1002"]]
 
 
+async def test_losing_hub_entry_does_not_remove_entities_it_owns(
+    hass: HomeAssistant, mock_scenes_yaml, mock_scene_entities
+):
+    """The entry whose scenes were already claimed must not delete its entities.
+
+    Which of two overlapping Hub entries claims the scenes first is not
+    deterministic across restarts, so the registry rows may still belong to
+    the entry that loses this time. Its orphan cleanup must not treat the
+    skipped scenes as removed, or it would delete those rows on every
+    restart where the winner changes.
+    """
+    entry1 = MockConfigEntry(domain=DOMAIN, data=MOCK_HUB_DATA, title="Hub 1")
+    entry1.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry1.entry_id)
+    await hass.async_block_till_done()
+
+    # The registry says entry2 owned these on a previous boot.
+    entry2 = MockConfigEntry(domain=DOMAIN, data=MOCK_HUB_DATA, title="Hub 2")
+    entry2.add_to_hass(hass)
+    er = entity_registry.async_get(hass)
+    owned_by_entry2 = {
+        unique_id: er.async_get_or_create(
+            "number", DOMAIN, unique_id, config_entry=entry2
+        ).id
+        for unique_id in ("1001_transition_time", "1002_transition_time")
+    }
+
+    assert await hass.config_entries.async_setup(entry2.entry_id)
+    await hass.async_block_till_done()
+
+    assert hass.data[DOMAIN][entry2.entry_id].scenes == []
+    for unique_id, registry_id in owned_by_entry2.items():
+        entity_id = er.async_get_entity_id("number", DOMAIN, unique_id)
+        assert entity_id is not None, f"{unique_id} was removed"
+        assert er.async_get(entity_id).id == registry_id
+
+
 async def test_async_setup_entry_external_scene(
     hass: HomeAssistant,
     mock_config_entry_external: MockConfigEntry,
